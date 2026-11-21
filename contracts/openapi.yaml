@@ -1,0 +1,513 @@
+openapi: 3.1.0
+info:
+  title: Delivery Tracker API
+  version: 1.0.0-draft
+  description: |
+    Contract between the Delivery Tracker API and its clients (Flutter driver app, React dashboard).
+    **Status: draft for review** — nothing here is final until both owners approve the PR.
+
+    ## Conventions
+    - JSON uses **camelCase** property names.
+    - IDs are **UUIDs** (strings).
+    - Dates are **ISO 8601 in UTC**, e.g. `2026-11-23T09:30:00Z`. Clients convert to local time for display.
+    - Enums are sent as **strings** (`"InTransit"`, not `4`).
+    - Errors use **Problem Details** (RFC 9457, `application/problem+json`), the ASP.NET Core default.
+    - Every endpoint except `/auth/*` needs `Authorization: Bearer <accessToken>`.
+
+    ## Tokens
+    - The **access token** (JWT) lives 15 minutes. Send it on every request.
+    - The **refresh token** lives 7 days and can be used **once**: `/auth/refresh` returns a new pair
+      and the old refresh token stops working (rotation).
+    - On `401` from any endpoint, call `/auth/refresh` once; if that also fails, send the user to the login screen.
+
+    ## Task status rules (enforced by the API)
+    ```
+    Created → Assigned → Accepted → PickedUp → InTransit → Delivered
+                           └──────────┴──────────┴──→ Failed (reason required)
+    Any non-final status → Cancelled (dispatcher only)
+    ```
+    A driver can only move **their own** tasks, and only to: Accepted, PickedUp, InTransit, Delivered, Failed.
+    `GET /tasks/{id}` returns `allowedNextStatuses` so the app can show only the buttons that are valid right now.
+servers:
+  - url: http://localhost:5256
+    description: Local development
+
+tags:
+  - name: Auth
+  - name: Driver tasks
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: driver1@deliverytracker.local
+              password: Passw0rd!
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3YjFlLi4uIn0.signature
+                accessTokenExpiresAt: '2026-11-23T09:45:00Z'
+                refreshToken: 9f8c2b7e4a1d4c3f8e6b5a29d0c7e1f4
+                refreshTokenExpiresAt: '2026-11-30T09:30:00Z'
+                user:
+                  id: 7b1e2c4d-5a6f-4e8b-9c0d-1e2f3a4b5c6d
+                  fullName: Youssef Amrani
+                  email: driver1@deliverytracker.local
+                  role: Driver
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          description: Wrong email or password (the API does not say which one)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: https://tools.ietf.org/html/rfc9110#section-15.5.2
+                title: Invalid email or password.
+                status: 401
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange a refresh token for a new token pair
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refreshToken: 9f8c2b7e4a1d4c3f8e6b5a29d0c7e1f4
+      responses:
+        '200':
+          description: New access and refresh tokens (the old refresh token is now invalid)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3YjFlLi4uIn0.newsignature
+                accessTokenExpiresAt: '2026-11-23T10:00:00Z'
+                refreshToken: 2a4d6f8b0c1e3a5c7e9f1b3d5f7a9c0e
+                refreshTokenExpiresAt: '2026-11-30T09:45:00Z'
+                user:
+                  id: 7b1e2c4d-5a6f-4e8b-9c0d-1e2f3a4b5c6d
+                  fullName: Youssef Amrani
+                  email: driver1@deliverytracker.local
+                  role: Driver
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          description: Refresh token unknown, expired or already used — log in again
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: https://tools.ietf.org/html/rfc9110#section-15.5.2
+                title: Invalid or expired refresh token.
+                status: 401
+
+  /me/tasks:
+    get:
+      tags: [Driver tasks]
+      summary: List the logged-in driver's open tasks
+      description: |
+        Returns the tasks assigned to the current driver that are not finished
+        (`Assigned`, `Accepted`, `PickedUp`, `InTransit`), ordered by `timeWindowStart`
+        (tasks without a time window last). No paging in v1.
+      operationId: getMyTasks
+      responses:
+        '200':
+          description: The driver's open tasks (empty array if none)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskSummary'
+              example:
+                - id: 3f6c1a2b-8d4e-4f5a-9b6c-7d8e9f0a1b2c
+                  reference: DT-1042
+                  status: Assigned
+                  customerName: Pharmacie Atlas
+                  pickup:
+                    address: 12 Rue Ibn Sina, Casablanca
+                    latitude: 33.5899
+                    longitude: -7.6039
+                  dropoff:
+                    address: 45 Boulevard Zerktouni, Casablanca
+                    latitude: 33.5853
+                    longitude: -7.6326
+                  timeWindowStart: '2026-11-23T09:00:00Z'
+                  timeWindowEnd: '2026-11-23T11:00:00Z'
+                  updatedAt: '2026-11-23T08:12:00Z'
+                - id: 8a9b0c1d-2e3f-4a5b-8c7d-9e0f1a2b3c4d
+                  reference: DT-1043
+                  status: PickedUp
+                  customerName: Restaurant Dar Zitoun
+                  pickup:
+                    address: 3 Rue Tata, Casablanca
+                    latitude: 33.5951
+                    longitude: -7.6187
+                  dropoff:
+                    address: 101 Avenue Hassan II, Casablanca
+                    latitude: null
+                    longitude: null
+                  timeWindowStart: null
+                  timeWindowEnd: null
+                  updatedAt: '2026-11-23T08:40:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /tasks/{id}:
+    get:
+      tags: [Driver tasks]
+      summary: Get one task with its full details and status history
+      description: A driver can only read tasks assigned to them; dispatchers and admins can read any task.
+      operationId: getTask
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: The task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDetail'
+              example:
+                id: 3f6c1a2b-8d4e-4f5a-9b6c-7d8e9f0a1b2c
+                reference: DT-1042
+                status: Accepted
+                customerName: Pharmacie Atlas
+                customerPhone: '+212600112233'
+                pickup:
+                  address: 12 Rue Ibn Sina, Casablanca
+                  latitude: 33.5899
+                  longitude: -7.6039
+                dropoff:
+                  address: 45 Boulevard Zerktouni, Casablanca
+                  latitude: 33.5853
+                  longitude: -7.6326
+                timeWindowStart: '2026-11-23T09:00:00Z'
+                timeWindowEnd: '2026-11-23T11:00:00Z'
+                notes: Fragile — keep upright. Ring twice.
+                driverId: c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f
+                createdAt: '2026-11-23T07:55:00Z'
+                updatedAt: '2026-11-23T08:20:00Z'
+                allowedNextStatuses: [PickedUp, Failed]
+                statusHistory:
+                  - status: Created
+                    changedAt: '2026-11-23T07:55:00Z'
+                    reason: null
+                  - status: Assigned
+                    changedAt: '2026-11-23T08:12:00Z'
+                    reason: null
+                  - status: Accepted
+                    changedAt: '2026-11-23T08:20:00Z'
+                    reason: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tasks/{id}/status:
+    patch:
+      tags: [Driver tasks]
+      summary: Change the status of a task
+      description: |
+        Moves the task to a new status if the transition is allowed (see the rules at the top).
+        `reason` is **required** when `status` is `Failed`, optional otherwise.
+        Returns the updated task, so the app can refresh its screen without another call.
+      operationId: updateTaskStatus
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskStatusRequest'
+            examples:
+              pickedUp:
+                summary: Driver picked up the package
+                value:
+                  status: PickedUp
+              failed:
+                summary: Delivery failed
+                value:
+                  status: Failed
+                  reason: Customer not at home, phone switched off.
+      responses:
+        '200':
+          description: Status changed; the updated task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDetail'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The transition is not allowed from the current status
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: https://tools.ietf.org/html/rfc9110#section-15.5.10
+                title: Invalid status transition.
+                status: 409
+                detail: Cannot change status from 'Assigned' to 'Delivered'.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TaskId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt, user]
+      properties:
+        accessToken:
+          type: string
+          description: 'JWT to send as `Authorization: Bearer <accessToken>`'
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+        refreshToken:
+          type: string
+          description: Opaque string (not a JWT). Store it securely (flutter_secure_storage).
+        refreshTokenExpiresAt:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/UserInfo'
+
+    UserInfo:
+      type: object
+      required: [id, fullName, email, role]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/Role'
+
+    Role:
+      type: string
+      enum: [Admin, Dispatcher, Driver]
+
+    TaskStatus:
+      type: string
+      enum: [Created, Assigned, Accepted, PickedUp, InTransit, Delivered, Failed, Cancelled]
+
+    Location:
+      type: object
+      required: [address, latitude, longitude]
+      properties:
+        address:
+          type: string
+          description: Full address on one line, as typed by the dispatcher
+        latitude:
+          type: [number, 'null']
+          description: Null if the address was not placed on the map
+        longitude:
+          type: [number, 'null']
+
+    TaskSummary:
+      type: object
+      description: The fields needed for one row in a task list
+      required: [id, reference, status, customerName, pickup, dropoff, timeWindowStart, timeWindowEnd, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          description: Short human-readable code for phone calls ("DT-1042")
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        customerName:
+          type: string
+        pickup:
+          $ref: '#/components/schemas/Location'
+        dropoff:
+          $ref: '#/components/schemas/Location'
+        timeWindowStart:
+          type: [string, 'null']
+          format: date-time
+        timeWindowEnd:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TaskDetail:
+      description: Everything in TaskSummary, plus the details for the task screen
+      allOf:
+        - $ref: '#/components/schemas/TaskSummary'
+        - type: object
+          required: [customerPhone, notes, driverId, createdAt, allowedNextStatuses, statusHistory]
+          properties:
+            customerPhone:
+              type: [string, 'null']
+              description: E.164 format, e.g. +212600112233 (for tap-to-call)
+            notes:
+              type: [string, 'null']
+            driverId:
+              type: [string, 'null']
+              format: uuid
+            createdAt:
+              type: string
+              format: date-time
+            allowedNextStatuses:
+              type: array
+              description: Statuses the **current user** may move this task to right now. Empty if none.
+              items:
+                $ref: '#/components/schemas/TaskStatus'
+            statusHistory:
+              type: array
+              description: Oldest first
+              items:
+                $ref: '#/components/schemas/StatusChange'
+
+    StatusChange:
+      type: object
+      required: [status, changedAt, reason]
+      properties:
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        changedAt:
+          type: string
+          format: date-time
+        reason:
+          type: [string, 'null']
+
+    UpdateTaskStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        reason:
+          type: [string, 'null']
+          maxLength: 500
+          description: Required when status is Failed
+
+    ProblemDetails:
+      type: object
+      description: RFC 9457 error body
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        traceId:
+          type: string
+          description: Quote this when reporting a bug; it matches the API logs
+        errors:
+          type: object
+          description: Only on validation errors — field name → list of messages
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+  responses:
+    ValidationError:
+      description: The request body is invalid
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://tools.ietf.org/html/rfc9110#section-15.5.1
+            title: One or more validation errors occurred.
+            status: 400
+            errors:
+              email: ['Email is required.']
+    Unauthorized:
+      description: Missing, invalid or expired access token — try /auth/refresh, then log in again
+    Forbidden:
+      description: Logged in, but not allowed (wrong role, or the task belongs to another driver)
+    NotFound:
+      description: No task with this id
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://tools.ietf.org/html/rfc9110#section-15.5.5
+            title: Task not found.
+            status: 404

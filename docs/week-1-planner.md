@@ -38,8 +38,8 @@ By Sunday, Habib logs in on his phone against Nassim's real API and sees a list 
 
 **Nassim (2 h)**
 
-- [ ] Create the .NET solution with Clean Architecture: Domain, Application, Infrastructure, Api projects (1.5 h)
-- [ ] Add Swagger, Serilog and a `/health` endpoint (30 min)
+- [x] Create the .NET solution with Clean Architecture: Domain, Application, Infrastructure, Api projects (1.5 h)
+- [x] Add Swagger, Serilog and a `/health` endpoint (30 min)
 
 **Habib (2 h)**
 

@@ -34,7 +34,7 @@ By Sunday, Habib logs in on his phone against Nassim's real API and sees a list 
 
 **Together (1 h)**
 
-- [ ] Design the database on dbdiagram.io: User, Driver, DeliveryTask, TaskStatusHistory, LocationPoint, Proof (1 h)
+- [x] Design the database on dbdiagram.io: User, Driver, DeliveryTask, TaskStatusHistory, LocationPoint, Proof (1 h)
 
 **Nassim (2 h)**
 
@@ -50,12 +50,12 @@ By Sunday, Habib logs in on his phone against Nassim's real API and sees a list 
 
 **Together (1.5 h)**
 
-- [ ] Write OpenAPI contract v1 in `contracts/openapi.yaml`: login, refresh, `GET /me/tasks`, `GET /tasks/{id}`, `PATCH /tasks/{id}/status`, with example JSON for each (1.5 h)
+- [x] Write OpenAPI contract v1 in `contracts/openapi.yaml`: login, refresh, `GET /me/tasks`, `GET /tasks/{id}`, `PATCH /tasks/{id}/status`, with example JSON for each (1.5 h)
 
 **Nassim (2 h)**
 
-- [ ] Write `docker-compose.yml` with PostgreSQL (and pgAdmin) (45 min)
-- [ ] Add EF Core entities from the data model and run the first migration (1 h 15 min)
+- [x] Write `docker-compose.yml` with PostgreSQL (and pgAdmin) (45 min)
+- [x] Add EF Core entities from the data model and run the first migration (1 h 15 min)
 
 **Habib (1.5 h)**
 

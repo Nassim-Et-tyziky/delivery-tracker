@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="11.0.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -15,5 +17,9 @@
     <ProjectReference Include="..\DeliveryTracker.Infrastructure\DeliveryTracker.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Template for local settings: never ship it with the app -->
+    <Content Update="appsettings.example.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 
 </Project>

@@ -24,7 +24,7 @@ try
 
     builder.Services.AddControllers();
     builder.Services.AddOpenApi();      // built-in generator: /openapi/v1.json
-    builder.Services.AddHealthChecks(); // later: .AddNpgSql(...) to also check the database
+    builder.Services.AddHealthChecks(); // checks are added by each layer (database: see AddInfrastructure)
 
     var app = builder.Build();
 
@@ -48,7 +48,7 @@ try
 
     app.Run();
 }
-catch (Exception ex)
+catch (Exception ex) when (ex is not HostAbortedException) // the EF Core tools stop the host on purpose
 {
     Log.Fatal(ex, "Application terminated unexpectedly");
 }

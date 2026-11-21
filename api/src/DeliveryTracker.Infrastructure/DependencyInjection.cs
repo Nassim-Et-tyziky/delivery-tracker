@@ -1,3 +1,5 @@
+using DeliveryTracker.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,7 +12,17 @@ public static class DependencyInjection
     /// </summary>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        // Later: services.AddDbContext<AppDbContext>(o => o.UseNpgsql(configuration.GetConnectionString("Default")))
+        var connectionString = configuration.GetConnectionString("Default")
+            ?? throw new InvalidOperationException(
+                "Connection string 'Default' is missing. Copy appsettings.example.json to appsettings.Development.json.");
+
+        services.AddDbContext<AppDbContext>(options => options
+            .UseNpgsql(connectionString)
+            .UseSnakeCaseNamingConvention()); // DeliveryTask.CustomerName -> customer_name (Postgres style)
+
+        // /health now also checks that the database answers.
+        services.AddHealthChecks().AddDbContextCheck<AppDbContext>("database");
+
         return services;
     }
 }
